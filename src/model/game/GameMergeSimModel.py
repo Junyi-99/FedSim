@@ -238,7 +238,7 @@ class GameMergeSimModel(MergeSimModel):
         data = torch.from_numpy(np.concatenate([item[0] for item in batch], axis=0))
         labels = torch.from_numpy(np.stack([item[1] for item in batch]))
         idx = torch.from_numpy(np.concatenate([item[2] for item in batch], axis=0))
-        idx_unique = np.array([item[3] for item in batch], dtype=np.int)
+        idx_unique = np.array([item[3] for item in batch], dtype=int)
         return data, labels, idx, idx_unique
 
     def train_dlrm(self, steam_train_data, steam_val_data, steam_test_data, ign_data, sim_score_cache_path=None,

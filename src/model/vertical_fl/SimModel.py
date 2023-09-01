@@ -170,8 +170,8 @@ class SimDataset(Dataset):
         data2_idx_list = []
         self.data_idx_split_points = [0]
         for i in tqdm(range(self.data1_idx.shape[0])):
-            d2 = torch.from_numpy(data2[i].astype(np.float)[:, 1:])  # remove index
-            d2_idx = data2[i].astype(np.float)[:, 0].reshape(-1, 1)
+            d2 = torch.from_numpy(data2[i].astype(float)[:, 1:])  # remove index
+            d2_idx = data2[i].astype(float)[:, 0].reshape(-1, 1)
             d1 = torch.from_numpy(np.repeat(data1[i].reshape(1, -1), d2.shape[0], axis=0))
             d = torch.cat([d2[:, :sim_dim], d1, d2[:, sim_dim:]], dim=1)  # move similarity to index 0
             data_list.append(d)
@@ -1020,7 +1020,7 @@ class SimModel(TwoPartyBaseModel):
         # for idx1, idx2, score in sim_scores:
         #     real_sim_scores.append([idx[int(idx1)], int(idx2), score])
         # real_sim_scores = np.array(real_sim_scores)
-        real_sim_scores = np.concatenate([idx[sim_scores[:, 0].astype(np.int)].reshape(-1, 1),
+        real_sim_scores = np.concatenate([idx[sim_scores[:, 0].astype(int)].reshape(-1, 1),
                                           sim_scores[:, 1:]], axis=1)
 
         # # filter similarity scores (last column) by a threshold
@@ -1092,12 +1092,12 @@ class SimModel(TwoPartyBaseModel):
         # matched_data2 = merged_data_labels[:, sim_dim + remain_data1_shape1:]
 
         return [matched_data1, matched_data2], ordered_labels, data_indices
-
+    # 大内存占用
     def prepare_train_combine(self, data1, data2, labels, data_cache_path=None, scale=False):
         if data_cache_path and os.path.isfile(data_cache_path):
             print("Loading data from cache")
             with open(data_cache_path, 'rb') as f:
-                train_dataset, val_dataset, test_dataset, y_scaler, self.sim_scaler = pickle.load(f)
+                train_dataset, val_dataset, test_dataset, y_scaler, self.sim_scaler = pickle.load(f) # 超级大
             print("Done")
         else:
             print("Splitting data")
@@ -1201,7 +1201,7 @@ class SimModel(TwoPartyBaseModel):
             test_dataset.filter_to_topk_dataset_(self.filter_top_k)
 
             self.knn_k = self.filter_top_k
-
+        
         return train_dataset, val_dataset, test_dataset, y_scaler
 
     def prepare_train_party3(self, data1, data2, data3, labels, data_cache_path=None, scale=False):
@@ -1380,7 +1380,7 @@ class SimModel(TwoPartyBaseModel):
         labels = torch.stack([item[1] for item in batch])
         weights = torch.cat([item[2] for item in batch], dim=0)
         idx = torch.cat([item[3] for item in batch], dim=0)
-        idx_unique = np.array([item[4] for item in batch], dtype=np.int)
+        idx_unique = np.array([item[4] for item in batch], dtype=int)
         return data, labels, weights, idx, idx_unique
 
     def plot_model(self, model, input_dim, save_fig_path, dim_wise=False):

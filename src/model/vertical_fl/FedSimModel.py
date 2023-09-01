@@ -149,7 +149,7 @@ class FedSimModel(SimModel):
 
     def train_splitnn(self, data1, data2, labels, data_cache_path=None, scale=False, torch_seed=None,
                       sim_model_path=None, merge_model_path=None, splitnn_model_path=None, evaluate_only=False,
-                      n_parties=2, force_input_dims=None, data_mask=None):
+                      n_parties=2, force_input_dims=None, data_mask=None, prof=None):
         if torch_seed is not None:
             torch.manual_seed(torch_seed)
             # For CUDA >= 10.2 only
@@ -162,7 +162,7 @@ class FedSimModel(SimModel):
 
         start_time = datetime.now()
         train_dataset, val_dataset, test_dataset, y_scaler = \
-            self.prepare_train_combine(data1, data2, labels, data_cache_path, scale)
+            self.prepare_train_combine(data1, data2, labels, data_cache_path, scale) # 在这里载入并 cross-join 了超大数据
         time_duration_sec = (datetime.now() - start_time).seconds
         print("Preparing time (sec): {}".format(time_duration_sec))
 
@@ -447,6 +447,9 @@ class FedSimModel(SimModel):
 
                 loss.backward()
                 optimizer.step()
+
+                if prof is not None:
+                    prof.step()
 
                 train_loss += loss.item()
                 preds = preds.reshape(-1, 1).detach().cpu().numpy()

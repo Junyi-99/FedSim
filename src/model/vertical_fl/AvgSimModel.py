@@ -65,7 +65,7 @@ class AvgDataset(Dataset):
         for i in range(self.data1.shape[0]):
             d1 = self.data1[i]
             for j in range(data2[i].shape[0]):
-                d2 = torch.from_numpy(data2[i][j].astype(np.float))
+                d2 = torch.from_numpy(data2[i][j].astype(float))
                 idx2 = d2[0].item()
                 d2 = d2[1:]  # remove index
                 weight = 1 / data2[i].shape[0]
@@ -251,7 +251,7 @@ class AvgSimModel(SimModel):
         train_idx = train_dataset.data1_idx.detach().cpu().numpy()
         train_labels = train_dataset.data1_labels.detach().cpu().numpy()
         if self.task in ['binary_cls', 'multi_cls']:
-            train_labels = train_labels.astype(np.int)
+            train_labels = train_labels.astype(int)
 
         if y_scaler is None:
             answer_all = dict(zip(train_idx, train_labels))
@@ -432,7 +432,7 @@ class AvgSimModel(SimModel):
         val_idx = val_dataset.data1_idx.detach().cpu().numpy()
         val_labels = val_dataset.data1_labels.detach().cpu().numpy()
         if self.task in ['binary_cls', 'multi_cls']:
-            val_labels = val_labels.astype(np.int)
+            val_labels = val_labels.astype(int)
 
         if y_scaler is None:
             answer_all = dict(zip(val_idx, val_labels))
