@@ -9,6 +9,9 @@ find the entry point of the huge memory usage at
 'FedSimModel.py:165'
 'filter_to_topk_dataset_() SimModel.py:236'
 
+
+# Problems
+
 it will make a cross join to the whole dataset
 for example, if the dataset shape is [98735, 77], it will make a [98735*k, 77] matrix
 where k is the number of topk
@@ -26,6 +29,11 @@ may involve the data transmittion between the GPU and CPU, which will be very sl
 maybe we can use the sparse matrix to store the data, and use the index to get the data from the sparse matrix
 or we can pre-process the data, and store the data into the GPU when training.
 
+
 # TODO
 1. Find a new data structure to store the data
 maybe find some paper to support your finding
+
+# Misc
+
+`git push upstream main`
