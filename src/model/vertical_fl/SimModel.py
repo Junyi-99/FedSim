@@ -7,6 +7,7 @@ from datetime import datetime
 from queue import PriorityQueue
 from collections.abc import Iterable
 from copy import deepcopy
+from collections import defaultdict
 
 import numpy as np
 import pandas as pd
@@ -105,49 +106,132 @@ def remove_conflict(matched_indices, n_batches: int):
 #
 #     return batched_indices
 
+class SimDatasetOptimized(Dataset):
+    @torch.no_grad()
+    def __init__(self, labels : np.ndarray, linkage_idx : np.ndarray, linkage_sim : np.ndarray, data1, data2) -> None:
+        # 任务的 label
+        # data1 and data2 does not contain any common-feature
+        # labels are belons to data1
+        # 
+        # (a,b,c) 代表 a - b - c 这三个数据会被 link 到一起
+        # (a,b,c 的相似度)
+        # *data 代表有 这么多组数据
+        knn_k = 100
+        assert linkage_idx.shape[1] == 2 # 有多少个 data 就应该有多少列 linkage_idx
+        assert linkage_sim.shape[0] == linkage_idx.shape[0]
+        assert data1.shape[0] == labels.shape[0], "data1 and labels should have the same samples"
+        assert linkage_idx.shape[0] == labels.shape[0] * knn_k
+        assert data1.shape[0] * knn_k == data2.shape[0] == linkage_idx.shape[0]
+        
+        self.labels = torch.tensor(labels)
+        self.indexs = linkage_idx[:, 0][::knn_k] # data1 的反查表，data1的子集ID --> 全局ID；保存在原始数据中的 record id，而不是这个 sub-sample 的 idx； 
 
+        print("Grouping data (Optimized)")
+
+        linkage_sim = linkage_sim.reshape(-1, 1)
+        linkage_idx = np.concatenate([linkage_sim, linkage_idx], axis=1)
+        
+        self.data_idx_data2 = {} # 构建 data2 的反查表，全局ID --> data2的子集ID。正好也可以给 data2 去重，用 linkage_idx 里面 右手边的元素。因为 linkage_idx[:,0] 与 k=100 个元素相关联，linkage_idx[:,1]必定会重复
+        self.data_idx_link = defaultdict(list) # 98735个key, key --> 100 records
+
+        for i in tqdm(range(linkage_idx.shape[0])):
+            link = linkage_idx[i]
+            data_sim  = link[0]
+            data1_idx = int(link[1])
+            data2_idx = int(link[2])
+            if self.data_idx_data2.get(data2_idx, None) is None:
+                self.data_idx_data2[data2_idx] = i
+            
+            self.data_idx_link[data1_idx].append(np.array([data2_idx, data_sim]))
+
+        self.linkage_idx = torch.tensor(linkage_idx)
+        self.data1 = torch.tensor(data1)
+        self.data2 = torch.tensor(data2)
+
+    def __len__(self):
+        return self.labels.shape[0]
+
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+        
+        data1_idx = self.indexs[idx] # 找到这个子集里面，data1 的 全局ID
+        data2_idx = self.data_idx_link[data1_idx] # 找到与 data1 link 的 k 个元素
+        data2_idx = data2_idx[:, 0].flatten().type(torch.int)
+
+        n = data2_idx.shape[0]
+        data1 = self.data1[idx].repeat(n).reshape(n, -1)
+        data2 = self.data2[data2_idx]
+
+        datas = torch.concatenate([data1, data2], axis=1)
+        labels = self.labels[idx]
+        # return combined data (5, 77)    5 is filtered_topK data
+        return datas, labels, self.indexs[idx]
+
+    @torch.no_grad()
+    def filter_to_topk_dataset_(self, k):
+        assert 0 < k <= self.linkage_idx.shape[0] // self.indexs.shape[0]
+        print("Generating top {} dataset".format(k))
+
+        for key in self.data_idx_link:
+            self.data_idx_link[key] = torch.tensor(self.data_idx_link[key]).reshape(-1, 2)  # <== TODO: too slow here
+            idx_sim = torch.tensor(self.data_idx_link[key][:, 1]) # 获取 similarity 列
+            _, indices = torch.topk(idx_sim, k, sorted=False)
+            self.data_idx_link[key] = self.data_idx_link[key][indices]
+
+    def add_noise_to_sim_(self, noise_scale=0.0):
+        print("Adding noise of scale {} to sim_scores".format(noise_scale))
+        # TODO: implement it
+        # sim_noise = np.random.normal(0, scale=noise_scale, size=(self.data.shape[0], self.sim_dim))
+        # self.data[:, :self.sim_dim] += sim_noise.astype('float64')
+
+"""
+data1一堆重复的
+train_y 也是
+"""
 class SimDataset(Dataset):
     @torch.no_grad()  # disable auto_grad in __init__
     def __init__(self, data1, data2, labels, data_idx, sim_dim=1):
-        self.sim_dim = sim_dim
+        self.sim_dim = sim_dim # similarity_dimension
 
         # data1[:, 0] and data2[:, 0] are both sim_scores
         assert data1.shape[0] == data2.shape[0] == data_idx.shape[0]
-        # remove similarity scores in data1 (at column 0)
-        data1_labels = np.concatenate([data1[:, sim_dim:], labels.reshape(-1, 1)], axis=1)
+        # remove similarity scores in data1 (at column 0), and add labels at the end
+        data1_labels = np.concatenate([data1[:, sim_dim:], labels.reshape(-1, 1)], axis=1) # data1和labels (9873500, 54)
 
         print("Grouping data")
-        grouped_data1 = {}
-        grouped_data2 = {}
+        grouped_data1 = {} # 98735个key, key --> 54 feature
+        grouped_data2 = defaultdict(list) # 98735个key, key --> 100 records
         for i in tqdm(range(data_idx.shape[0])):
-            idx1, idx2 = data_idx[i]
-            new_data2 = np.concatenate([idx2.reshape(1, 1), data2[i].reshape(1, -1)], axis=1)
-            if idx1 in grouped_data2:
-                grouped_data2[idx1].append(new_data2)
-            else:
-                grouped_data2[idx1] = [new_data2]
-            np.random.shuffle(grouped_data2[idx1])  # shuffle to avoid information leakage of the order
-            grouped_data1[idx1] = data1_labels[i]
+            idx1, idx2 = data_idx[i] # 俩link到一起的数据 id
+            new_data2 = np.concatenate([idx2.reshape(1, 1), data2[i].reshape(1, -1)], axis=1) # data2[i]: (24,) 不含lat,lon 含price; new_data2: (1, 25) 
+            grouped_data2[idx1].append(new_data2) # 左侧ID 对应右侧的数据（knn k=100），new_data2 包含 (idx2, 24-features)
+            grouped_data1[idx1] = data1_labels[i] # TODO: 这里有重复100次赋值的问题
+            # np.random.shuffle(grouped_data2[idx1])  # shuffle to avoid information leakage of the order 为什么要 shuffle 呢，dict 里的顺序又没那么重要
+        
+        
         for k, v in tqdm(grouped_data2.items()):
-            grouped_data2[k] = np.vstack(v)
+            grouped_data2[k] = np.vstack(v) # 从 100 个 25feature 的list，变成 (100, 25)
         print("Done")
 
         print("Checking if B is sorted by similarity: ", end="")
         is_sorted = True
         for k, v in grouped_data2.items():
-            is_sorted = is_sorted and np.all(np.diff(v[:, 1].flatten()) < 0)
+            if np.all(np.diff(v[:, 1].flatten()) < 0) == False:
+                is_sorted = False
+                break
         print(is_sorted)
 
-        group1_data_idx = np.array(list(grouped_data1.keys()))
-        group1_data1_labels = np.array(list(grouped_data1.values()))
-        group2_data_idx = np.array(list(grouped_data2.keys()))
-        group2_data2 = np.array(list(grouped_data2.values()), dtype='object')
+        group1_data_idx = np.array(list(grouped_data1.keys())) # 98735 keys (memory: 385.8 KB)
+        group1_data1_labels = np.array(list(grouped_data1.values())) # (98735, 54), 40.67 MB 不含sim_score, 但是含label
+        group2_data_idx = np.array(list(grouped_data2.keys())) # 98735 keys (memory: 385.8 KB)
+        group2_data2 = np.array(list(grouped_data2.values()), dtype='object') # (98735, 100, 25), 1883.2 MB. 98735个key，每个key对应100个records，每个record有25个feature
 
         # print("Equitable coloring to remove conflict")
         # data1_colors = remove_conflict(data_idx, n_batches=np.ceil(data1.shape[0] / batch_sizes).astype('int'))
         # data1_order = np.argsort(data1_colors, axis=1)
 
-        print("Sorting data")
+        print("Sorting data") # time consuming task
         group1_order = group1_data_idx.argsort()
         group2_order = group2_data_idx.argsort()
 
@@ -158,49 +242,51 @@ class SimDataset(Dataset):
         assert (group1_data_idx == group2_data_idx).all()
         print("Done")
 
-        self.data1_idx: np.ndarray = group1_data_idx
-        data1: np.ndarray = group1_data1_labels[:, :-1]
-        self.labels: torch.Tensor = torch.from_numpy(group1_data1_labels[:, -1])
-        data2: list = group2_data2
+        self.data1_idx: np.ndarray = group1_data_idx  # (98735,)
+        data1: np.ndarray = group1_data1_labels[:, :-1] # 把label那一列扔了。（不含sim_score）data1 before: (9873500, 54), data1 after: (98735, 53)
+        self.labels: torch.Tensor = torch.from_numpy(group1_data1_labels[:, -1]) # torch.Size([98735])
+        data2: list = group2_data2 # data2 before: (9873500, 24), data2 after: (98375, 100, 25)
 
         print("Retrieve data")
         data_list = []
         weight_list = []
-        data_idx_list = []
+        data1_idx_list = []
         data2_idx_list = []
         self.data_idx_split_points = [0]
-        for i in tqdm(range(self.data1_idx.shape[0])):
-            d2 = torch.from_numpy(data2[i].astype(float)[:, 1:])  # remove index
-            d2_idx = data2[i].astype(float)[:, 0].reshape(-1, 1)
-            d1 = torch.from_numpy(np.repeat(data1[i].reshape(1, -1), d2.shape[0], axis=0))
-            d = torch.cat([d2[:, :sim_dim], d1, d2[:, sim_dim:]], dim=1)  # move similarity to index 0
+        for i in tqdm(range(self.data1_idx.shape[0])): # 98735 iterations
+            d2 = torch.from_numpy(data2[i].astype(float)[:, 1:])  # remove index 获得跟 data1 idx0 相匹配的 data2 中的 100 条数据。shape == (100,24)
+            d2_idx = data2[i].astype(float)[:, 0].reshape(-1, 1) # 获得这 100 条数据 在 data2 中的的 idx
+            d1 = torch.from_numpy(np.repeat(data1[i].reshape(1, -1), d2.shape[0], axis=0)) # 拷贝 data1 100次。得到 (100, 53)，这个d1不含sim_score，是最原始的版本（去掉lat和lon）
+            d1_idx = np.repeat(self.data1_idx[i].item(), d2.shape[0], axis=0) # 同样复制100次 d1_idx
+            d = torch.cat([d2[:, :sim_dim], d1, d2[:, sim_dim:]], dim=1)  # move similarity to index 0，相当于是复制d1 100次，然后跟d2的100条数据拼起来
             data_list.append(d)
 
             weight = torch.ones(d2.shape[0]) / d2.shape[0]
             weight_list.append(weight)
 
-            d1_idx = np.repeat(self.data1_idx[i].item(), d2.shape[0], axis=0)
             # idx = torch.from_numpy(np.concatenate([d1_idx.reshape(-1, 1), d2_idx], axis=1))
+            data1_idx_list.append(torch.from_numpy(d1_idx))
             data2_idx_list.append(torch.from_numpy(d2_idx))
-            data_idx_list.append(torch.from_numpy(d1_idx))
-            self.data_idx_split_points.append(self.data_idx_split_points[-1] + d1_idx.shape[0])
+            self.data_idx_split_points.append(self.data_idx_split_points[-1] + d1_idx.shape[0]) # 这里的 d1_idx.shape[0] 其实就是 d2.shape[0]，其实也是 data2[i].shape[0]
         print("Done")
 
         self.data = torch.cat(data_list, dim=0)  # sim_scores; data1; data2
-        self.weights = torch.cat(weight_list, dim=0)
-        self.data_idx = torch.cat(data_idx_list, dim=0)
+        self.weights = torch.cat(weight_list, dim=0) # 干嘛的
+        self.data_idx = torch.cat(data1_idx_list, dim=0)
         self.data2_idx = torch.cat(data2_idx_list, dim=0)
 
     def __len__(self):
         return self.data1_idx.shape[0]
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx): # len == 98735, 这个 idx 在 [0, 98735)
         if torch.is_tensor(idx):
             idx = idx.tolist()
-
+        
         start = self.data_idx_split_points[idx]
         end = self.data_idx_split_points[idx + 1]
-
+        # self.data[start:end].shape == (5, 77)      5 是 filter_to_topk_dataset(k==5)
+        # self.data1_idx 是这条数据在原始数据集中的 id，直接返回就行了。
+        #  self.data[start:end], self.labels[idx], self.data1_idx[idx]
         return self.data[start:end], self.labels[idx], self.weights[start:end], \
                self.data_idx[start:end], self.data1_idx[idx]
 
@@ -1021,7 +1107,7 @@ class SimModel(TwoPartyBaseModel):
         #     real_sim_scores.append([idx[int(idx1)], int(idx2), score])
         # real_sim_scores = np.array(real_sim_scores)
         real_sim_scores = np.concatenate([idx[sim_scores[:, 0].astype(int)].reshape(-1, 1),
-                                          sim_scores[:, 1:]], axis=1)
+                                          sim_scores[:, 1:]], axis=1) # 转换真正的id。[real_id1, real_id2, sim_score]
 
         # # filter similarity scores (last column) by a threshold
         # if not self.feature_wise_sim:
@@ -1045,7 +1131,8 @@ class SimModel(TwoPartyBaseModel):
         else:
             score_columns = ['score']
         sim_scores_df = pd.DataFrame(real_sim_scores, columns=['data1_idx', 'data2_idx'] + score_columns)
-        sim_scores_df[['data1_idx', 'data2_idx']].astype('int32')
+        sim_scores_df[['data1_idx', 'data2_idx']] = sim_scores_df[['data1_idx', 'data2_idx']].astype('int32') # bug fix by junyi
+        # sim_scores_df 存的是两组data的id，以及他们的相似度分数
         data1_labels_df = pd.concat([data1_df, labels_df], axis=1)
 
         matched_pairs = np.unique(sim_scores_df['data1_idx'].to_numpy())
@@ -1092,12 +1179,12 @@ class SimModel(TwoPartyBaseModel):
         # matched_data2 = merged_data_labels[:, sim_dim + remain_data1_shape1:]
 
         return [matched_data1, matched_data2], ordered_labels, data_indices
-    # 大内存占用
+
     def prepare_train_combine(self, data1, data2, labels, data_cache_path=None, scale=False):
         if data_cache_path and os.path.isfile(data_cache_path):
             print("Loading data from cache")
             with open(data_cache_path, 'rb') as f:
-                train_dataset, val_dataset, test_dataset, y_scaler, self.sim_scaler = pickle.load(f) # 超级大
+                train_dataset, val_dataset, test_dataset, y_scaler, self.sim_scaler = pickle.load(f)
             print("Done")
         else:
             print("Splitting data")
@@ -1170,6 +1257,12 @@ class SimModel(TwoPartyBaseModel):
                 print("Scale done")
 
             sim_dim = self.num_common_features if self.feature_wise_sim else 1
+
+            train_sim = train_Xs[0][:, 0]
+            train_label = train_y[::100]
+            train_data1 = train_Xs[0][::100, 1:]
+            train_data2 = train_Xs[1]
+            #train_dataset = SimDatasetOptimized(labels=train_label, linkage_idx=train_idx, linkage_sim=train_sim, data1=train_data1, data2=train_data2)
             train_dataset = SimDataset(train_Xs[0], train_Xs[1], train_y, train_idx, sim_dim=sim_dim)
             val_dataset = SimDataset(val_Xs[0], val_Xs[1], val_y, val_idx, sim_dim=sim_dim)
             test_dataset = SimDataset(test_Xs[0], test_Xs[1], test_y, test_idx, sim_dim=sim_dim)
@@ -1201,7 +1294,7 @@ class SimModel(TwoPartyBaseModel):
             test_dataset.filter_to_topk_dataset_(self.filter_top_k)
 
             self.knn_k = self.filter_top_k
-        
+
         return train_dataset, val_dataset, test_dataset, y_scaler
 
     def prepare_train_party3(self, data1, data2, data3, labels, data_cache_path=None, scale=False):
@@ -1376,12 +1469,20 @@ class SimModel(TwoPartyBaseModel):
 
     @staticmethod
     def var_collate_fn(batch):
-        data = torch.cat([item[0] for item in batch], dim=0)
-        labels = torch.stack([item[1] for item in batch])
-        weights = torch.cat([item[2] for item in batch], dim=0)
-        idx = torch.cat([item[3] for item in batch], dim=0)
-        idx_unique = np.array([item[4] for item in batch], dtype=int)
-        return data, labels, weights, idx, idx_unique
+        if len(batch[0]) == 5:
+            data = torch.cat([item[0] for item in batch], dim=0)
+            labels = torch.stack([item[1] for item in batch])
+            weights = torch.cat([item[2] for item in batch], dim=0)
+            idx = torch.cat([item[3] for item in batch], dim=0)
+            idx_unique = np.array([item[4] for item in batch], dtype=int)
+            return data, labels, weights, idx, idx_unique
+        else: # optimized version
+            data = torch.cat([item[0] for item in batch], dim=0)
+            labels = torch.stack([item[1] for item in batch])
+            #weights = torch.cat([item[2] for item in batch], dim=0)
+            #idx = torch.cat([item[3] for item in batch], dim=0)
+            idx_unique = np.array([item[3] for item in batch], dtype=int)
+            return data, labels, None, None, idx_unique
 
     def plot_model(self, model, input_dim, save_fig_path, dim_wise=False):
         """

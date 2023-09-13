@@ -5,14 +5,13 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Train Beijing",
+            "name": "Beijing",
             "type": "python",
             "request": "launch",
             "program": "src/train_beijing_fedsim.py",
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": [
-                "-g", "1",
                 "-p", "1e0",
                 "-k", "5",
                 "-ds"

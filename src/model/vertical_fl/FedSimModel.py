@@ -137,7 +137,7 @@ class FedSimModel(SimModel):
         self.data1_shape = None
         self.data2_shape = None
 
-        assert 'knn' in self.blocking_method  # the pairing must be consistent
+        # assert 'knn' in self.blocking_method  # the pairing must be consistent
 
     def load_models_(self, sim_model_path=None, merge_model_path=None, splitnn_model_path=None):
         if sim_model_path is not None:
@@ -555,7 +555,7 @@ class FedSimModel(SimModel):
             self.model.eval()
             self.merge_model.eval()
             self.sim_model.eval()
-            for data_batch, labels, weights, idx1, idx1_unique in tqdm(val_loader, desc=name):
+            for data_batch, labels, _, _, idx1_unique in tqdm(val_loader, desc=name):
                 data_batch = data_batch.to(self.device).float()
                 labels = labels.to(self.device).float()
 

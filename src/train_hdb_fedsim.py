@@ -83,5 +83,5 @@ model = FedSimModel(num_common_features=num_common_features,
                     sim_leak_p=args.leak_p,
                     link_n_jobs=-1,
                     )
-model.train_splitnn(X1, X2, y, data_cache_path="cache/hdb_sim.pkl", scale=True)
+model.train_splitnn(X1, X2, y, scale=True)
 # model.train_splitnn(X1, X2, y, scale=True)

@@ -179,7 +179,7 @@ class MergeSimModel(SimModel):
             for data_batch, labels, weights, idx1, idx1_unique in tqdm(train_loader, desc="Train Main"):
                 data_batch = data_batch.to(self.device).float()
                 labels = labels.to(self.device).float()
-                weights = weights.to(self.device).float()
+                # weights = weights.to(self.device).float()
 
                 if self.feature_wise_sim:
                     sim_scores = data_batch[:, :self.num_common_features]
