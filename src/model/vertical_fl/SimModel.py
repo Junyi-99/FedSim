@@ -1258,12 +1258,25 @@ class SimModel(TwoPartyBaseModel):
 
             sim_dim = self.num_common_features if self.feature_wise_sim else 1
 
-            train_sim = train_Xs[0][:, 0]
-            train_label = train_y[::100]
-            train_data1 = train_Xs[0][::100, 1:]
-            train_data2 = train_Xs[1]
-            train_dataset = SimDatasetOptimized(labels=train_label, linkage_idx=train_idx, linkage_sim=train_sim, data1=train_data1, data2=train_data2)
-            #train_dataset = SimDataset(train_Xs[0], train_Xs[1], train_y, train_idx, sim_dim=sim_dim)
+            # train_sim = train_Xs[0][:, 0]
+            # train_label = train_y[::100]
+            # train_data1 = train_Xs[0][::100, 1:]
+            # train_data2 = train_Xs[1]
+            # train_dataset = SimDatasetOptimized(labels=train_label, linkage_idx=train_idx, linkage_sim=train_sim, data1=train_data1, data2=train_data2)
+            
+            # val_sim = val_Xs[0][:, 0]
+            # val_label = val_y[::100]
+            # val_data1 = val_Xs[0][::100, 1:]
+            # val_data2 = val_Xs[1]
+            # val_dataset = SimDatasetOptimized(labels=val_label, linkage_idx=val_idx, linkage_sim=val_sim, data1=val_data1, data2=val_data2)
+
+            # test_sim = test_Xs[0][:, 0]
+            # test_label = test_y[::100]
+            # test_data1 = test_Xs[0][::100, 1:]
+            # test_data2 = test_Xs[1]
+            # test_dataset = SimDatasetOptimized(labels=test_label, linkage_idx=test_idx, linkage_sim=test_sim, data1=test_data1, data2=test_data2)
+
+            train_dataset = SimDataset(train_Xs[0], train_Xs[1], train_y, train_idx, sim_dim=sim_dim)
             val_dataset = SimDataset(val_Xs[0], val_Xs[1], val_y, val_idx, sim_dim=sim_dim)
             test_dataset = SimDataset(test_Xs[0], test_Xs[1], test_y, test_idx, sim_dim=sim_dim)
 
