@@ -1,9 +1,4 @@
-# FedSim 
-[![GitHub license](https://img.shields.io/github/license/Xtra-Computing/FedSim)](https://github.com/Xtra-Computing/FedSim/edit/main/LICENSE)
-![PyTorch](https://img.shields.io/badge/torch-1.8.2-orange)
-
-
-
+# FedSim
 FedSim is a **coupled vertical federated learning framework** that boosts the training with record similarities.
 
 
@@ -42,15 +37,15 @@ The linkage and training of each dataset is combined in a single script.
 ### FedSim without adding noise
 The scripts without adding noise are located under `src/` in the format of `src/train_<dataset>_<algorithm>.py`. You can run each script by
 
-
-> python src/train_<dataset>_<algorithm>.py [-g gpu_index] [-p perturbed_noise_on_similarity] [-k number_of_neighbors] [--mlp-merge] [-ds] [-dw]
-
-* `-g/--gpu`: GPU index to run this script. If GPU of this index is not available, CPU will be used instead.
-* `-k/--top-k`: Number of neighbors to extract from possible matches, which should be less than the value of "knn_k". ($K$ in the paper)
-* `-p/--leak-p`: The probability of leakage of bloom filters. ($\tau$ in the paper)
-* `--mlp-merge`: whether to replace CNN merge model with MLP merge model
-* `-ds/--disable-sort`: whether to distable the sort gate
-* `-dw/--disable-weight`: whether to disable the weight gate
+```bash
+python src/train_<dataset>_<algorithm>.py [-g gpu_index] [-p perturbed_noise_on_similarity] [-k number_of_neighbors] [--mlp-merge] [-ds] [-dw]
+```
+> -g/--gpu: GPU index to run this script. If GPU of this index is not available, CPU will be used instead.
+> -k/--top-k: Number of neighbors to extract from possible matches, which should be less than the value of "knn_k". ($K$ in the paper)
+> -p/--leak-p: The probability of leakage of bloom filters. ($\tau$ in the paper)
+> --mlp-merge: whether to replace CNN merge model with MLP merge model
+> -ds/--disable-sort: whether to distable the sort gate
+> -dw/--disable-weight: whether to disable the weight gate
 
 Taking house dataset dataset as an example:
 ```bash
@@ -67,17 +62,12 @@ runs FedSim on house dataset with noise satisfying $\tau=0.01$ added, $K=5$, mer
 
 ## Citation
 ```bib
-@inproceedings{NEURIPS2022_84b74416,
- author = {Wu, Zhaomin and Li, Qinbin and He, Bingsheng},
- booktitle = {Advances in Neural Information Processing Systems},
- editor = {S. Koyejo and S. Mohamed and A. Agarwal and D. Belgrave and K. Cho and A. Oh},
- pages = {21087--21100},
- publisher = {Curran Associates, Inc.},
- title = {A Coupled Design of Exploiting Record Similarity for Practical Vertical Federated Learning},
- url = {https://proceedings.neurips.cc/paper_files/paper/2022/file/84b744165a0597360caad96b06e69313-Paper-Conference.pdf},
- volume = {35},
- year = {2022}
-}
+@inproceedings{fedsim,
+  author={Wu, Zhaomin and Li, Qinbin and He, Bingsheng},
+  booktitle={Advances in neural information processing systems},
+  title={A Coupled Design of Exploiting Record Similarity for Practical Vertical Federated Learning},
+  year={2022}
+}.
 ```
 
 
