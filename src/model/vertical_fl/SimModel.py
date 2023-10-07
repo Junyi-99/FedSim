@@ -356,7 +356,7 @@ class SimModel(TwoPartyBaseModel):
                  link_epsilon=0.1, sim_leak_p=0.0, link_n_jobs=1,
 
                  filter_top_k=None,
-
+                 data_cache_path="cache",
                  **kwargs):
         super().__init__(num_common_features, **kwargs)
 
@@ -376,7 +376,7 @@ class SimModel(TwoPartyBaseModel):
         self.blocking_method = blocking_method
         self.center_threshold = center_threshold
         self.n_clusters = n_clusters
-
+        self.data_cache_path = data_cache_path
         if local_hidden_sizes is None:
             self.local_hidden_sizes = [[10], [10]]
         else:
@@ -754,7 +754,8 @@ class SimModel(TwoPartyBaseModel):
             sim_scores[:, 2:] = self.sim_scaler.transform(sim_scores[:, 2:])
         else:
             print("Saving raw sim scores")
-            np.save('cache/sim_scores_no_priv_test.npy', sim_scores)
+            save_path = os.path.join(self.data_cache_path, 'sim_scores_no_priv_test.npy')
+            np.save(save_path, sim_scores)
             # generate train scaler
             self.sim_scaler = StandardScaler()
             sim_scores[:, 2:] = self.sim_scaler.fit_transform(sim_scores[:, 2:])

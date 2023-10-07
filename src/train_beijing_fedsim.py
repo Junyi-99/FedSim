@@ -27,6 +27,10 @@ num_common_features = 2
 [X1, X2], y = load_both(house_path=house_dataset, airbnb_path=airbnb_dataset, active_party='house')
 name = "beijing_fedsim_p_{:.0E}".format(args.leak_p)
 
+cache_path = "cache"
+if args.optimized_dataset:
+    cache_path = "cache_opt"
+
 model = FedSimModel(num_common_features=num_common_features,
                     raw_output_dim=10,
                     feature_wise_sim=False,
@@ -54,7 +58,7 @@ model = FedSimModel(num_common_features=num_common_features,
                     learning_rate=1e-3,
                     weight_decay=1e-5,
                     update_sim_freq=1,
-                    num_workers=4 if sys.gettrace() is None else 0,
+                    num_workers=0 if sys.gettrace() is None else 0,
                     use_scheduler=False, sche_factor=0.1, sche_patience=10, sche_threshold=0.0001,
                     writer_path="runs/{}_{}".format(name, now_string),
                     model_save_path="ckp/{}_{}.pth".format(name, now_string),
@@ -83,6 +87,7 @@ model = FedSimModel(num_common_features=num_common_features,
                     link_threshold_t=1e-2,
                     sim_leak_p=args.leak_p,
                     link_n_jobs=-1,
+                    data_cache_path=cache_path
                     )
 
 
@@ -105,13 +110,7 @@ torch.cuda.manual_seed_all(seed)  # 如果你使用多个 GPU
 #with memray.Tracker("output_file.bin"):
     #print("Allocations will be tracked until the with block ends")
 
-cache_path = ""
-
-if args.optimized_dataset:
-    cache_path = "cache_opt/beijing_sim.pkl"
-else:
-    cache_path = "cache/beijing_sim.pkl"
-model.train_splitnn(X1, X2, y, data_cache_path=cache_path, scale=True, use_optimized_dataset=args.optimized_dataset)
+model.train_splitnn(X1, X2, y, data_cache_path=os.path.join(cache_path, "beijing_sim.pkl"), scale=True, use_optimized_dataset=args.optimized_dataset)
 # model.train_splitnn(X1, X2, y, data_cache_path="cache/beijing_sim.pkl", scale=True, torch_seed=0,
 #                     splitnn_model_path="ckp/beijing_fedsim_p_1E+00_2022-01-22-16-05-04.pth",
 #                     sim_model_path="ckp/beijing_fedsim_p_1E+00_2022-01-22-16-05-04_sim.pth",

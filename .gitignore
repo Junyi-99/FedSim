@@ -2,6 +2,8 @@ profile.html
 profile.json
 # Byte-compiled / optimized / DLL files
 __pycache__/
+cache/
+cache_opt/
 *.py[cod]
 .DS_Store
 # C extensions

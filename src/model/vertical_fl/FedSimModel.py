@@ -343,7 +343,9 @@ class FedSimModel(SimModel):
             all_labels = np.zeros(0)
 
             for i in range(1):
-                torch.cuda.synchronize()
+                if torch.cuda.is_available():
+                    torch.cuda.synchronize()
+                
                 start = time.time()
 
                 for data_batch, labels, weights, idx1, idx1_unique in tqdm(train_loader, desc="Train Main"):
@@ -472,7 +474,8 @@ class FedSimModel(SimModel):
                     all_preds = np.concatenate([all_preds, preds])
                     all_labels = np.concatenate([all_labels, labels])
 
-                torch.cuda.synchronize()
+                if torch.cuda.is_available():
+                    torch.cuda.synchronize()
                 end = time.time()
                 print("Data concat time (sec): {}".format(end - start))
 
