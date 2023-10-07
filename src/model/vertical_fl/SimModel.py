@@ -147,14 +147,16 @@ class SimDatasetOptimized(Dataset):
         self.linkage_idx = torch.tensor(linkage_idx)
         self.data1 = torch.tensor(data1)
         self.data2 = torch.tensor(data2)
-
+        print("🖥️", self.data1.device)
+        print("🖥️", self.data2.device)
+        
     def __len__(self):
         return self.labels.shape[0]
 
     def __getitem__(self, idx):
         if torch.is_tensor(idx):
             idx = idx.tolist()
-        
+        # print(idx)
         data1_idx = self.indexs[idx] # 找到这个子集里面，data1 的 全局ID
         data2_idx = self.data_idx_link[data1_idx] # 找到与 data1 link 的 k 个元素
         data2_idx = data2_idx[:, 0].flatten().type(torch.int)
@@ -162,7 +164,6 @@ class SimDatasetOptimized(Dataset):
         n = data2_idx.shape[0]
         data1 = self.data1[idx].repeat(n).reshape(n, -1)
         data2 = self.data2[data2_idx]
-
         datas = torch.concatenate([data1, data2], axis=1)
         labels = self.labels[idx]
         # return combined data (5, 77)    5 is filtered_topK data
@@ -1182,7 +1183,7 @@ class SimModel(TwoPartyBaseModel):
 
     def prepare_train_combine(self, data1, data2, labels, data_cache_path=None, scale=False, use_optimized_dataset=True):
         if data_cache_path and os.path.isfile(data_cache_path):
-            print("Loading data from cache")
+            print("Loading data from cache", data_cache_path)
             with open(data_cache_path, 'rb') as f:
                 train_dataset, val_dataset, test_dataset, y_scaler, self.sim_scaler = pickle.load(f)
             print("Done")
@@ -1258,8 +1259,9 @@ class SimModel(TwoPartyBaseModel):
 
             sim_dim = self.num_common_features if self.feature_wise_sim else 1
 
-            print("Using Optimized Dataset", "✅" if use_optimized_dataset else "❌")
+           
             if use_optimized_dataset:
+                print("Using Optimized Dataset", "✅")
                 train_sim = train_Xs[0][:, 0]
                 train_label = train_y[::100]
                 train_data1 = train_Xs[0][::100, 1:]
@@ -1278,6 +1280,7 @@ class SimModel(TwoPartyBaseModel):
                 test_data2 = test_Xs[1]
                 test_dataset = SimDatasetOptimized(labels=test_label, linkage_idx=test_idx, linkage_sim=test_sim, data1=test_data1, data2=test_data2)
             else:
+                print("Using Optimized Dataset", "❌")
                 train_dataset = SimDataset(train_Xs[0], train_Xs[1], train_y, train_idx, sim_dim=sim_dim)
                 val_dataset = SimDataset(val_Xs[0], val_Xs[1], val_y, val_idx, sim_dim=sim_dim)
                 test_dataset = SimDataset(test_Xs[0], test_Xs[1], test_y, test_idx, sim_dim=sim_dim)
@@ -1287,6 +1290,7 @@ class SimModel(TwoPartyBaseModel):
                 with open(data_cache_path, 'wb') as f:
                     pickle.dump([train_dataset, val_dataset, test_dataset, y_scaler, self.sim_scaler], f)
                 print("Saved")
+                print("train_dataset type", type(train_dataset))
 
         print("Calculating noise scale")
         if np.isclose(self.sim_leak_p, 1.0):

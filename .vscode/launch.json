@@ -11,10 +11,17 @@
             "program": "src/train_beijing_fedsim.py",
             "console": "integratedTerminal",
             "justMyCode": true,
+            "python": "${command:python.interpreterPath}",
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "-1",
+            },
             "args": [
-                "-p", "1e0",
-                "-k", "5",
-                "-ds"
+                "-p",
+                "1e0",
+                "-k",
+                "5",
+                "-ds",
+                "-od"
             ]
         }
     ]

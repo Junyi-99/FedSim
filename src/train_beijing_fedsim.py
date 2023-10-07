@@ -15,11 +15,12 @@ airbnb_dataset = root + "airbnb_clean.csv"
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-p', '--leak-p', type=float, default=1)
-parser.add_argument('-g', '--gpu', type=int, default=0)
+parser.add_argument('-g', '--gpu', type=int, default=None)
 parser.add_argument('-k', '--top-k', type=int, default=None)
 parser.add_argument('--mlp-merge', action='store_true')
 parser.add_argument('-ds', '--disable-sort', action='store_true')
 parser.add_argument('-dw', '--disable-weight', action='store_true')
+parser.add_argument('-od', '--optimized-dataset', action='store_true', default=False)
 args = parser.parse_args()
 
 num_common_features = 2
@@ -45,11 +46,11 @@ model = FedSimModel(num_common_features=num_common_features,
                     val_rate=0.1,
                     test_rate=0.2,
                     drop_key=True,
-                    device='cuda:{}'.format(args.gpu),
+                    device='cuda:{}'.format(args.gpu) if args.gpu is not None else "cpu",
                     hidden_sizes=[200, 100],
                     train_batch_size=128,
                     test_batch_size=1024 * 4,
-                    num_epochs=1,
+                    num_epochs=10,
                     learning_rate=1e-3,
                     weight_decay=1e-5,
                     update_sim_freq=1,
@@ -84,9 +85,33 @@ model = FedSimModel(num_common_features=num_common_features,
                     link_n_jobs=-1,
                     )
 
+
+import random
+import numpy as np
+import torch
+seed = 42
+
+# 设置 Python 随机种子
+random.seed(seed)
+
+# 设置 NumPy 随机种子
+np.random.seed(seed)
+
+# 设置 PyTorch 随机种子
+torch.manual_seed(seed)
+torch.cuda.manual_seed(seed)
+torch.cuda.manual_seed_all(seed)  # 如果你使用多个 GPU
+
 #with memray.Tracker("output_file.bin"):
     #print("Allocations will be tracked until the with block ends")
-model.train_splitnn(X1, X2, y, data_cache_path="cache/beijing_sim.pkl", scale=True)
+
+cache_path = ""
+
+if args.optimized_dataset:
+    cache_path = "cache_opt/beijing_sim.pkl"
+else:
+    cache_path = "cache/beijing_sim.pkl"
+model.train_splitnn(X1, X2, y, data_cache_path=cache_path, scale=True, use_optimized_dataset=args.optimized_dataset)
 # model.train_splitnn(X1, X2, y, data_cache_path="cache/beijing_sim.pkl", scale=True, torch_seed=0,
 #                     splitnn_model_path="ckp/beijing_fedsim_p_1E+00_2022-01-22-16-05-04.pth",
 #                     sim_model_path="ckp/beijing_fedsim_p_1E+00_2022-01-22-16-05-04_sim.pth",
