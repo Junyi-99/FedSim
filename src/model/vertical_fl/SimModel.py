@@ -162,9 +162,11 @@ class SimDatasetOptimized(Dataset):
         data2_idx = data2_idx[:, 0].flatten().type(torch.int)
 
         n = data2_idx.shape[0]
-        data1 = self.data1[idx].repeat(n).reshape(n, -1)
-        data2 = self.data2[data2_idx]
-        datas = torch.concatenate([data1, data2], axis=1)
+
+        data1 = torch.concatenate([self.data1[idx].reshape(1, -1)] * 5, axis=0)
+        # data1 = self.data1[idx].repeat(n).reshape(n, -1) # (5, 53)
+        data2 = self.data2[data2_idx] # (5, 24)
+        datas = torch.concatenate([data1, data2], axis=1) # (5, 77)
         labels = self.labels[idx]
         # return combined data (5, 77)    5 is filtered_topK data
         return datas, labels, self.indexs[idx]

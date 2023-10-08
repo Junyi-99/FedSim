@@ -30,6 +30,7 @@ from .SimModel import SimDataset
 from utils import get_split_points
 from utils.utils import equal_split
 
+import torch.autograd.profiler as profiler
 
 class ConvModel(nn.Module):
     def __init__(self, knn_k, merge_input_dim, merge_hidden_sizes, n_channels=4, kernel_v_size=3,
@@ -174,7 +175,8 @@ class FedSimModel(SimModel):
         print("Initializing dataloader")
         train_loader = DataLoader(train_dataset, batch_size=self.train_batch_size, shuffle=True,
                                   num_workers=self.num_workers, multiprocessing_context=self.multiprocess_context,
-                                  collate_fn=self.var_collate_fn)
+                                  collate_fn=self.var_collate_fn,
+                                  pin_memory=True)
         print("Done")
 
         self.data1_shape = data1.shape
@@ -347,6 +349,9 @@ class FedSimModel(SimModel):
                     torch.cuda.synchronize()
                 
                 start = time.time()
+                
+                if prof is not None:
+                    prof.start()
 
                 for data_batch, labels, weights, idx1, idx1_unique in tqdm(train_loader, desc="Train Main"):
                     data_batch = data_batch.to(self.device).float()
@@ -364,116 +369,123 @@ class FedSimModel(SimModel):
 
                     # train main model
                     optimizer.zero_grad()
-                    outputs = self.model(data)
 
-                    # sim_scores_combine = torch.sqrt(torch.sum(sim_scores ** 2, dim=1))
-                    sim_scores_combine = sim_scores
-                    if self.disable_sort:
-                        sim_scores_sorted = sim_scores_combine.reshape(idx1_unique.shape[0], self.knn_k)
-                        outputs_sorted = outputs
-                    else:
-                        sim_scores_sorted, sort_indices = torch.sort(
-                            sim_scores_combine.reshape(idx1_unique.shape[0], self.knn_k), dim=1)
-                        outputs_sorted = outputs.reshape(idx1_unique.shape[0], self.knn_k, -1)[
-                            torch.arange(idx1_unique.shape[0]).unsqueeze(-1), sort_indices].reshape(
-                            idx1_unique.shape[0] * self.knn_k, -1)
-                    if self.disable_weight:
-                        sim_weights_flat = sim_scores_sorted.reshape(-1, 1)
-                    else:
-                        sim_weights_flat = self.sim_model(sim_scores_sorted.reshape(-1, 1)) + 1e-7
-                    sim_weights = sim_weights_flat.reshape(idx1_unique.shape[0], self.knn_k)
-                    normalized_sim_weights = sim_weights / torch.sum(sim_weights, dim=1).reshape(-1, 1)
+                    with profiler.record_function("INFERENCE"):
+                        outputs = self.model(data)
 
-                    if not self.use_sim:
-                        outputs_weighted = outputs_sorted
-                    elif self.use_conv:
-                        outputs_weighted = outputs_sorted * sim_weights_flat
-                    else:
-                        outputs_weighted = outputs_sorted * normalized_sim_weights.reshape(-1, 1)
-                        # outputs_weighted = outputs_sorted * sim_weights_flat
+                    with profiler.record_function("CALC_SIMSCORE"):
+                        # sim_scores_combine = torch.sqrt(torch.sum(sim_scores ** 2, dim=1))
+                        sim_scores_combine = sim_scores
+                        if self.disable_sort:
+                            sim_scores_sorted = sim_scores_combine.reshape(idx1_unique.shape[0], self.knn_k)
+                            outputs_sorted = outputs
+                        else:
+                            sim_scores_sorted, sort_indices = torch.sort(
+                                sim_scores_combine.reshape(idx1_unique.shape[0], self.knn_k), dim=1)
+                            outputs_sorted = outputs.reshape(idx1_unique.shape[0], self.knn_k, -1)[
+                                torch.arange(idx1_unique.shape[0]).unsqueeze(-1), sort_indices].reshape(
+                                idx1_unique.shape[0] * self.knn_k, -1)
+                        if self.disable_weight:
+                            sim_weights_flat = sim_scores_sorted.reshape(-1, 1)
+                        else:
+                            sim_weights_flat = self.sim_model(sim_scores_sorted.reshape(-1, 1)) + 1e-7
+                        sim_weights = sim_weights_flat.reshape(idx1_unique.shape[0], self.knn_k)
+                        normalized_sim_weights = sim_weights / torch.sum(sim_weights, dim=1).reshape(-1, 1)
 
-                    if self.mlp_merge is None:
-                        outputs_merge = self.merge_model(outputs_weighted.reshape(idx1_unique.shape[0], self.knn_k, -1))
-                    else:
-                        outputs_merge = self.merge_model(outputs_weighted.reshape(idx1_unique.shape[0], -1))
+                        if not self.use_sim:
+                            outputs_weighted = outputs_sorted
+                        elif self.use_conv:
+                            outputs_weighted = outputs_sorted * sim_weights_flat
+                        else:
+                            outputs_weighted = outputs_sorted * normalized_sim_weights.reshape(-1, 1)
+                            # outputs_weighted = outputs_sorted * sim_weights_flat
 
-                    if self.task in ['binary_cls', 'regression'] and self.use_conv is False:
-                        # bound threshold to prevent CUDA error
-                        outputs_merge[outputs_merge > 1.] = 1.
-                        outputs_merge[outputs_merge < 0.] = 0.
-                    outputs_batch = outputs_merge
+                        if self.mlp_merge is None:
+                            outputs_merge = self.merge_model(outputs_weighted.reshape(idx1_unique.shape[0], self.knn_k, -1))
+                        else:
+                            outputs_merge = self.merge_model(outputs_weighted.reshape(idx1_unique.shape[0], -1))
 
-                    # outputs_batch = torch.zeros([0, output_dim]).to(self.device)
-                    # idx1_split_points = get_split_points(idx1, idx1.shape[0])
-                    # labels_sim = torch.zeros(0).to(self.device)
-                    # for i in range(idx1_unique.shape[0]):
-                    #     start = idx1_split_points[i]
-                    #     end = idx1_split_points[i + 1]
-                    #
-                    #     # reduce multi-dimensional similarity to one dimension
-                    #     sim_scores_flat = torch.sqrt(torch.sum(sim_scores[start:end] ** 2, dim=1)).flatten()
-                    #     _, indices = torch.sort(sim_scores_flat)
-                    #     _outputs_sorted = outputs[start:end][indices]
-                    #
-                    #     _sim_scores_sorted = sim_scores[start:end][indices]
-                    #     _sim_weights = self.sim_model(_sim_scores_sorted) + 1e-7
-                    #
-                    #     if not self.use_sim:
-                    #         _outputs_weighted = _outputs_sorted
-                    #     elif self.use_conv:
-                    #         _outputs_weighted = _outputs_sorted * _sim_weights
-                    #     else:
-                    #         _outputs_weighted = _outputs_sorted * _sim_weights / torch.sum(_sim_weights)
-                    #
-                    #     if self.mlp_merge is None:
-                    #         output_i = self.merge_model(_outputs_weighted.unsqueeze(0))
-                    #     else:
-                    #         output_i = self.merge_model(_outputs_weighted.flatten())
-                    #
-                    #     if self.task in ['binary_cls', 'regression'] and self.use_conv is False:
-                    #         # bound threshold to prevent CUDA error
-                    #         output_i[output_i > 1.] = 1.
-                    #         output_i[output_i < 0.] = 0.
-                    #
-                    #     outputs_batch = torch.cat([outputs_batch, output_i.reshape(-1, output_dim)], dim=0)
-                    #     labels_sim = torch.cat([labels_sim, labels[i].repeat(end - start)], dim=0)
+                        if self.task in ['binary_cls', 'regression'] and self.use_conv is False:
+                            # bound threshold to prevent CUDA error
+                            outputs_merge[outputs_merge > 1.] = 1.
+                            outputs_merge[outputs_merge < 0.] = 0.
+                        outputs_batch = outputs_merge
 
-                    if self.task == 'binary_cls':
-                        outputs_batch = outputs_batch.flatten()
-                        loss = criterion(outputs_batch, labels)
-                        preds = outputs_batch > 0.5
-                    elif self.task == 'multi_cls':
-                        loss = criterion(outputs_batch, labels.long())
-                        preds = torch.argmax(outputs_batch, dim=1)
-                    elif self.task == 'regression':
-                        outputs_batch = outputs_batch.flatten()
-                        loss = criterion(outputs_batch, labels)
-                        preds = outputs_batch
-                    else:
-                        assert False, "Unsupported task"
+                        # outputs_batch = torch.zeros([0, output_dim]).to(self.device)
+                        # idx1_split_points = get_split_points(idx1, idx1.shape[0])
+                        # labels_sim = torch.zeros(0).to(self.device)
+                        # for i in range(idx1_unique.shape[0]):
+                        #     start = idx1_split_points[i]
+                        #     end = idx1_split_points[i + 1]
+                        #
+                        #     # reduce multi-dimensional similarity to one dimension
+                        #     sim_scores_flat = torch.sqrt(torch.sum(sim_scores[start:end] ** 2, dim=1)).flatten()
+                        #     _, indices = torch.sort(sim_scores_flat)
+                        #     _outputs_sorted = outputs[start:end][indices]
+                        #
+                        #     _sim_scores_sorted = sim_scores[start:end][indices]
+                        #     _sim_weights = self.sim_model(_sim_scores_sorted) + 1e-7
+                        #
+                        #     if not self.use_sim:
+                        #         _outputs_weighted = _outputs_sorted
+                        #     elif self.use_conv:
+                        #         _outputs_weighted = _outputs_sorted * _sim_weights
+                        #     else:
+                        #         _outputs_weighted = _outputs_sorted * _sim_weights / torch.sum(_sim_weights)
+                        #
+                        #     if self.mlp_merge is None:
+                        #         output_i = self.merge_model(_outputs_weighted.unsqueeze(0))
+                        #     else:
+                        #         output_i = self.merge_model(_outputs_weighted.flatten())
+                        #
+                        #     if self.task in ['binary_cls', 'regression'] and self.use_conv is False:
+                        #         # bound threshold to prevent CUDA error
+                        #         output_i[output_i > 1.] = 1.
+                        #         output_i[output_i < 0.] = 0.
+                        #
+                        #     outputs_batch = torch.cat([outputs_batch, output_i.reshape(-1, output_dim)], dim=0)
+                        #     labels_sim = torch.cat([labels_sim, labels[i].repeat(end - start)], dim=0)
+                    with profiler.record_function("CALC_LOSS"):
+                        if self.task == 'binary_cls':
+                            outputs_batch = outputs_batch.flatten()
+                            loss = criterion(outputs_batch, labels)
+                            preds = outputs_batch > 0.5
+                        elif self.task == 'multi_cls':
+                            loss = criterion(outputs_batch, labels.long())
+                            preds = torch.argmax(outputs_batch, dim=1)
+                        elif self.task == 'regression':
+                            outputs_batch = outputs_batch.flatten()
+                            loss = criterion(outputs_batch, labels)
+                            preds = outputs_batch
+                        else:
+                            assert False, "Unsupported task"
 
-                    # torchviz.make_dot(outputs_batch, params=dict(list(self.model.named_parameters()) +
-                    #                                         list(self.merge_model.named_parameters()) +
-                    #                    list(self.sim_model.named_parameters()))).render('fig/slow_fedsim_b2', format='svg')
+                        # torchviz.make_dot(outputs_batch, params=dict(list(self.model.named_parameters()) +
+                        #                                         list(self.merge_model.named_parameters()) +
+                        #                    list(self.sim_model.named_parameters()))).render('fig/slow_fedsim_b2', format='svg')
+                    with profiler.record_function("BACKWARD"):
+                        loss.backward()
+                        optimizer.step()
 
-                    loss.backward()
-                    optimizer.step()
+                    with profiler.record_function("MISC_COMP"):
+                        train_loss += loss.item()
+                        preds = preds.reshape(-1, 1).detach().cpu().numpy()
+                        labels = labels.detach().cpu().numpy()
 
+                        n_train_batches += 1
+                        if self.task == 'regression' and y_scaler is not None:
+                            preds = y_scaler.inverse_transform(preds.reshape(-1, 1))
+                            labels = y_scaler.inverse_transform(labels.reshape(-1, 1)).flatten()
+        
+                        all_preds = np.concatenate([all_preds, preds])
+                        all_labels = np.concatenate([all_labels, labels])
+            
                     if prof is not None:
                         prof.step()
-
-                    train_loss += loss.item()
-                    preds = preds.reshape(-1, 1).detach().cpu().numpy()
-                    labels = labels.detach().cpu().numpy()
-
-                    n_train_batches += 1
-                    if self.task == 'regression' and y_scaler is not None:
-                        preds = y_scaler.inverse_transform(preds.reshape(-1, 1))
-                        labels = y_scaler.inverse_transform(labels.reshape(-1, 1)).flatten()
-
-                    all_preds = np.concatenate([all_preds, preds])
-                    all_labels = np.concatenate([all_labels, labels])
-
+                        
+                if prof is not None:
+                    prof.stop()
+                    
                 if torch.cuda.is_available():
                     torch.cuda.synchronize()
                 end = time.time()
