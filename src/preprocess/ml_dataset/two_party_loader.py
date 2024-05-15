@@ -61,7 +61,7 @@ class TwoPartyLoader:
             assert False, "Unsupported ML dataset format"
 
         if scale_label:
-            y = np.rint(y * (self.n_classes - 1)).astype(np.int)
+            y = np.rint(y * (self.n_classes - 1)).astype('int32')
 
         assert self.num_features == X.shape[1], "Total number of features mismatch."
         print("Done")
@@ -165,7 +165,7 @@ class ThreePartyLoader:
             assert False, "Unsupported ML dataset format"
 
         if scale_label:
-            y = np.rint(y * (self.n_classes - 1)).astype(np.int)
+            y = np.rint(y * (self.n_classes - 1)).astype('int32')
 
         assert self.num_features == X.shape[1], "Total number of features mismatch."
         print("Done")

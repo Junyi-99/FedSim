@@ -51,10 +51,10 @@ def negative_sample_steam_interact(interact_sample_path, game_path, out_data_pat
     print('negative sample cnt', len(negative))
 
     negative_df = pd.DataFrame(negative, columns=['steamid', 'appid'])
-    negative_df['label'] = list(np.zeros(negative_df.shape[0], dtype=np.int))
+    negative_df['label'] = list(np.zeros(negative_df.shape[0], dtype='int32'))
     print(negative_df.shape)
 
-    interact_df['label'] = list(np.ones(interact_df.shape[0], dtype=np.int))
+    interact_df['label'] = list(np.ones(interact_df.shape[0], dtype='int32'))
     print(interact_df.shape)
 
     all_interact_df = interact_df.append(negative_df)

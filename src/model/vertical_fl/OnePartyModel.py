@@ -16,6 +16,12 @@ from tqdm import tqdm
 import deprecation
 import warnings
 
+import os
+import sys
+sys.path.insert(
+    0, os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir))
+)
+
 from model.base.MLP import MLP
 import metric
 import metric.base
