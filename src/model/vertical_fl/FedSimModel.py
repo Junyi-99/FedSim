@@ -525,15 +525,14 @@ class FedSimModel(SimModel):
                 self.writer.add_scalars(self.metrics_f[i].name, {'Train': train_metric_scores[i],
                                                                  'Validation': val_metric_scores[i],
                                                                  'Test': test_metric_scores[i]}, epoch + 1)
-            print("Best:")
             for i in range(len(self.metrics)):
-                print("          {:<17s}: Train {:.4f}, Val {:.4f}, Test {:.4f}"
+                print("Best:        {:<17s}: Train {:.4f}, Val {:.4f}, Test {:.4f}"
                       .format(self.metrics_f[i].name, best_train_metric_scores[i],
                               best_val_metric_scores[i], best_test_metric_scores[i]))
 
         time_duration_sec = (datetime.now() - start_time).seconds
         print("Training time (sec): {}".format(time_duration_sec))
-
+        print("Done!")
         return best_test_metric_scores
 
     def eval_merge_score(self, val_dataset, loss_criterion, name='Val', y_scaler=None, data_mask=None):
